@@ -1,0 +1,32 @@
+# CI: the teeth gate (modeled on nolang's battery.yml, issue #20 there).
+#
+# Rule: green on an empty test suite is the same lie as green smoke over a red
+# battery. pytest exits 5 when it collects no tests — that must be RED, not a
+# polite pass. Utilities land here one PR at a time, each bringing at least one
+# synthetic target it is REQUIRED to bite (probe fails rc=1 if the tool is
+# broken). The suite grows as utilities arrive; the gate never loosens.
+name: teeth
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: teeth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bite-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pytest
+        run: python -m pip install --quiet pytest
+      - name: Run the bite-tests (empty suite = red, by design)
+        run: |
+          pytest tests/ -q --strict-markers

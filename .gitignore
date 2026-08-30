@@ -1,0 +1,32 @@
+# окружения и кэш
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# 🔴 секреты — НИКОГДА (страховка; секретов тут быть не должно вовсе)
+*.env
+*.seed
+*.token
+*_api*.env
+*backup_codes*
+.credentials*
+*.kdbx
+
+# выводы прогонов, временное
+*.log
+/tmp/
+**/отчёт_*.json
+**/report_*.json
+**/*_out.md
+**/export.html
+
+# личное/офисное — не для публичного репо
+НАКАЗ_*.md
+WORKDAY*.md
+.state/
+PUSH_PLAN.md

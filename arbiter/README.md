@@ -1,4 +1,5 @@
 # arbiter — LLM-оркестратор над общей БД находок
+> Threat model: the dual-LLM pattern — the model proposes, code disposes (the proposed name is validated against a real allow-list before anything happens).
 
 🔴 Единственное место в контуре mad-tools, где языковая модель в петле. И даже здесь
 она только **предлагает**, какую пробу гнать следующей. **Вердикт ставит код:** парсинг

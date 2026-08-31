@@ -1,4 +1,5 @@
 # ferret
+> Threat model: the battery's shared memory — findings land here; arbiter and the exporters read from here.
 
 MAD finding tracker with JSON storage and a Textual board.
 

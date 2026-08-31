@@ -3,3 +3,4 @@ python-dotenv
 click
 rich
 textual
+httpx

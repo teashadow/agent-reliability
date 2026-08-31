@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# args: -m periscope_app.cli check TARGET PROGRAM ; fail-safe by design
+target="$4"; program="$5"
+case "$program" in
+  "") exit 3 ;;
+  unknown-program) exit 7 ;;
+  demo-program)
+    case "$target" in
+      *.example.com) exit 0 ;;
+      *) exit 1 ;;
+    esac ;;
+  *) exit 1 ;;
+esac

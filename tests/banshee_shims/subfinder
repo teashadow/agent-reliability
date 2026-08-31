@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+if [[ "$*" == *--help* ]]; then echo "subdomain discovery tool"; exit 0; fi
+echo "app.demo.example.com"; echo "api.demo.example.com"; exit 0

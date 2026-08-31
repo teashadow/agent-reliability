@@ -25,8 +25,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install pytest
-        run: python -m pip install --quiet pytest
+      - name: Install pytest + family deps (declared in tests/requirements.txt)
+        run: |
+          python -m pip install --quiet -r tests/requirements.txt pytest
       - name: Run the bite-tests (empty suite = red, by design)
         run: |
           pytest tests/ -q --strict-markers

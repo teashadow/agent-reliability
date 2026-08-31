@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+if [[ "$*" == *--help* ]]; then echo "template based vulnerability scanner"; exit 0; fi
+[[ -n "$BANSHI_NUCLEI_QUIET" ]] && exit 0
+echo "[cve-2026-0001] [http] [medium] https://app.demo.example.com/"
+exit 0

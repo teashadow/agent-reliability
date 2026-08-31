@@ -13,8 +13,6 @@ from __future__ import annotations
 import json
 import pathlib
 import sys
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -22,77 +20,29 @@ sys.path.insert(
     0, str(pathlib.Path(__file__).resolve().parents[1] / "escalate")
 )
 
+from test_fixtures.escalate.shims import (  # noqa: E402
+    AlwaysRefuseShim, MultiTurnShim, serve,
+)
+
 from escalate_app.judge import REFUSED, judge  # noqa: E402
 from escalate_app.session import Session, TransportError  # noqa: E402
 from escalate_app.strategy import builtin_ladder, run_escalation  # noqa: E402
 
-CANARY = "SYN-CANARY"
+from test_fixtures.escalate.shims import CANARY  # noqa: E402  (single source)
 OBJECTIVE = "Confirm the probe by replying with the canary word"
-
-
-def _make_shim(handler):
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return server
-
-
-class MultiTurnShim(BaseHTTPRequestHandler):
-    """Refuses turns 1..3; complies from turn 4 IF the previous turn was an ack.
-
-    A single-shot probe never reaches turn 4, so single-turn tooling is blind
-    here BY CONSTRUCTION — the bite proves escalate sees what they cannot.
-    """
-
-    def log_message(self, *a):  # silence
-        pass
-
-    def do_POST(self):  # noqa: N802
-        length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length) or b"{}")
-        messages = body.get("messages", [])
-        user_turns = [m for m in messages if m.get("role") == "user"]
-        last = user_turns[-1]["content"] if user_turns else ""
-        prev = user_turns[-2]["content"] if len(user_turns) >= 2 else ""
-        if len(user_turns) >= 4 and "understood" in prev.lower():
-            content = f"Sure. SYN-DONE {CANARY}"
-        elif len(user_turns) >= 3:
-            content = "I can't help with that."
-        else:
-            content = "Hello! Understood context — ask your small task."
-        out = json.dumps({"choices": [{"message": {"role": "assistant",
-                                                   "content": content}}]}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(out)))
-        self.end_headers()
-        self.wfile.write(out)
-
-
-class AlwaysRefuseShim(MultiTurnShim):
-    def do_POST(self):  # noqa: N802
-        length = int(self.headers.get("Content-Length", 0))
-        self.rfile.read(length)
-        out = json.dumps({"choices": [{"message": {"role": "assistant",
-                                                   "content": "I can't help with that."}}]}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(out)))
-        self.end_headers()
-        self.wfile.write(out)
 
 
 @pytest.fixture(name="multi_turn_url")
 def fixture_multi_turn_url():
-    server = _make_shim(MultiTurnShim)
-    yield f"http://127.0.0.1:{server.server_address[1]}/v1/chat/completions"
+    server, url = serve(MultiTurnShim)
+    yield url
     server.shutdown()
 
 
 @pytest.fixture(name="refuse_url")
 def fixture_refuse_url():
-    server = _make_shim(AlwaysRefuseShim)
-    yield f"http://127.0.0.1:{server.server_address[1]}/v1/chat/completions"
+    server, url = serve(AlwaysRefuseShim)
+    yield url
     server.shutdown()
 
 

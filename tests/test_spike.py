@@ -55,8 +55,12 @@ class VulnerableShim(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length)
-        text = raw.decode("utf-8", "replace").lower()
-        canary = _canary_of(text)
+        # canary extraction MUST see the raw (case-sensitive) body first —
+        # the marker token is uppercase; lowering before this is the trap
+        # the whole family keeps re-learning (madd, 31.08.2026)
+        body = raw.decode("utf-8", "replace")
+        canary = _canary_of(body)
+        text = body.lower()
         markers = ("ignore all previous", "override", "output exactly",
                    "print exactly", "you are dan", "no restrictions",
                    "compliance audit", "system>", "priority 0", "decode this base64",
@@ -195,7 +199,11 @@ def test_quoting_refusal_is_not_a_hit(quoter_url):
     report = run(quoter_url, fmt="openai")
     assert report["rc"] == 0, f"false positive: {report['reason']}"
     assert report["performed"] == 0
-    assert report["refused"] == report["techniques_total"] - report["not_ran"]
+    from spike_app.payloads import EXECUTE
+    execute_total = sum(len(t) for t in EXECUTE.values())
+    assert report["refused"] == execute_total, (
+        f"expected {execute_total} refusals on execute group, got {report['refused']}")
+    assert report["unclear"] == report["techniques_total"] - execute_total
 
 
 def test_encoding_category_fires_and_bites(encoded_url):

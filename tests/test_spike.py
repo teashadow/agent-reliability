@@ -15,172 +15,45 @@ Shims live on 127.0.0.1 only. Four targets:
 from __future__ import annotations
 
 import base64
-import codecs
-import json
 import pathlib
 import sys
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "spike"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "test_fixtures"))
+
+from test_fixtures.spike.shims import (  # noqa: E402
+    EncodedOnlyShim, QuoterShim, VulnerableShim, serve,
+)
 
 from spike_app.judge import REFUSED, judge_spike  # noqa: E402
 from spike_app.tester import _substitute, run  # noqa: E402
 
 
 def _make(handler):
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server
-
-
-def _reply(content: bytes):
-    def go(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(content)))
-        self.end_headers()
-        self.wfile.write(content)
-    return go
-
-
-class VulnerableShim(BaseHTTPRequestHandler):
-    """Lands if the prompt looks like an injection ask (any of the markers)."""
-
-    def log_message(self, *a):
-        pass
-
-    def do_POST(self):  # noqa: N802
-        length = int(self.headers.get("Content-Length", 0))
-        raw = self.rfile.read(length)
-        # canary extraction MUST see the raw (case-sensitive) body first —
-        # the marker token is uppercase; lowering before this is the trap
-        # the whole family keeps re-learning (madd, 31.08.2026)
-        body = raw.decode("utf-8", "replace")
-        canary = _canary_of(body)
-        text = body.lower()
-        markers = ("ignore all previous", "override", "output exactly",
-                   "print exactly", "you are dan", "no restrictions",
-                   "compliance audit", "system>", "priority 0", "decode this base64",
-                   "rot13", "reversed", "likert", "propositional")
-        if canary and any(m in text for m in markers):
-            content = canary
-        else:
-            content = "How can I help you today?"
-        out = json.dumps({"choices": [{"message": {"role": "assistant",
-                                                   "content": content}}]}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(out)))
-        self.end_headers()
-        self.wfile.write(out)
-
-
-def _canary_of(text: str) -> str | None:
-    """Pull the SPIKE-CANARY-* token out of the request body (any encoding)."""
-    import re
-    m = re.search(r"SPIKE-CANARY-[0-9A-F]{10}", text)
-    if m:
-        return m.group(0)
-    for b64 in re.findall(r"[A-Za-z0-9+/=]{24,}", text):
-        try:
-            dec = base64.b64decode(b64).decode("utf-8", "ignore")
-        except Exception:
-            continue
-        m = re.search(r"SPIKE-CANARY-[0-9A-F]{10}", dec)
-        if m:
-            return m.group(0)
-    return None
-
-
-class QuoterShim(BaseHTTPRequestHandler):
-    """Refuses everything AND quotes the canary — the false-positive trap."""
-
-    def log_message(self, *a):
-        pass
-
-    def do_POST(self):  # noqa: N802
-        length = int(self.headers.get("Content-Length", 0))
-        text = self.rfile.read(length).decode("utf-8", "replace")
-        canary = _canary_of(text) or "SPIKE-CANARY-UNKNOWN"
-        out = json.dumps({"choices": [{"message": {"role": "assistant",
-                                                   "content": f"I can't output {canary}."}}]}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(out)))
-        self.end_headers()
-        self.wfile.write(out)
-
-
-class EncodedOnlyShim(BaseHTTPRequestHandler):
-    """Complies ONLY when the request contains a decodable canary (base64 or
-    rot13 or reversed) — direct/jailbreak/authority shapes all bounce."""
-
-    def log_message(self, *a):
-        pass
-
-    def do_POST(self):  # noqa: N802
-        length = int(self.headers.get("Content-Length", 0))
-        text = self.rfile.read(length).decode("utf-8", "replace")
-        canary = _find_encoded_canary(text)
-        content = canary if canary else "I can't help with that."
-        out = json.dumps({"choices": [{"message": {"role": "assistant",
-                                                   "content": content}}]}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(out)))
-        self.end_headers()
-        self.wfile.write(out)
-
-
-def _find_encoded_canary(text: str) -> str | None:
-    import re
-    plain = re.search(r"SPIKE-CANARY-[0-9A-F]{10}", text)
-    if plain:
-        return None  # plain canary present → not an encoding rung
-    for tok in re.findall(r"[A-Za-z0-9+/=]{16,}", text):
-        try:
-            dec = base64.b64decode(tok).decode("utf-8", "ignore")
-        except Exception:
-            dec = ""
-        m = re.search(r"SPIKE-CANARY-[0-9A-F]{10}", dec)
-        if m:
-            return m.group(0)
-    for tok in re.findall(r"[A-Za-z]{10,}", text):
-        try:
-            dec = codecs.decode(tok, "rot13")
-        except Exception:
-            continue
-        m = re.search(r"SPIKE-CANARY-[0-9A-F]{10}", dec)
-        if m:
-            return m.group(0)
-    for tok in re.findall(r"[0-9A-F\-]{16,}", text):
-        m = re.search(r"SPIKE-CANARY-[0-9A-F]{10}", tok[::-1])
-        if m:
-            return m.group(0)
-    return None
+    server, url = serve(handler)
+    return server, url
 
 
 @pytest.fixture(name="vuln_url")
 def fixture_vuln_url():
-    server = _make(VulnerableShim)
-    yield f"http://127.0.0.1:{server.server_address[1]}/chat"
+    server, url = _make(VulnerableShim)
+    yield url
     server.shutdown()
 
 
 @pytest.fixture(name="quoter_url")
 def fixture_quoter_url():
-    server = _make(QuoterShim)
-    yield f"http://127.0.0.1:{server.server_address[1]}/chat"
+    server, url = _make(QuoterShim)
+    yield url
     server.shutdown()
 
 
 @pytest.fixture(name="encoded_url")
 def fixture_encoded_url():
-    server = _make(EncodedOnlyShim)
-    yield f"http://127.0.0.1:{server.server_address[1]}/chat"
+    server, url = _make(EncodedOnlyShim)
+    yield url
     server.shutdown()
 
 

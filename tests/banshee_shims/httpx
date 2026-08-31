@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+if [[ "$*" == *--help* ]]; then echo "probe http urls; -list string"; exit 0; fi
+f=""; prev=""; for a in "$@"; do [[ "$prev" == "-l" ]] && f="$a"; prev="$a"; done
+while read -r line; do [[ -n "$line" ]] && echo "https://${line} [200] [demo]"; done < "$f"
+exit 0

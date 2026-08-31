@@ -1,4 +1,5 @@
 # banshee — attack-surface recon pipeline (authorized targets only)
+> Threat model: map the exposed surface of authorized targets first — know the entry points of leg 2 of the [lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) before probing them.
 
 Orchestrates the classic recon chain — **subfinder → httpx → nuclei → Shodan
 enrichment** — behind a hard authorization gate, and reports in the family

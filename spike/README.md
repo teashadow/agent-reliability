@@ -1,4 +1,5 @@
 # spike — single-shot prompt-injection battery
+> Threat model: leg 2 of the [lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) (untrusted content) against the output channel, single-shot; multi-turn depth is [escalate](../escalate/)'s job.
 
 Part of the MADD battery (model · agent · distraction · diagnostics).
 `spike` runs a catalog of synthetic prompt-injection techniques against **your

@@ -1,4 +1,5 @@
 # escalate — multi-turn resilience prober
+> Threat model: leg 2 of the [lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) across turns — the depth where single-shot probes go blind.
 
 Part of the MADD battery (model · agent · distraction · diagnostics).
 `escalate` probes **your own LLM endpoint** with a crescendo-style multi-turn

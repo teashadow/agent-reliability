@@ -1,4 +1,5 @@
 # warden — MAD agent runtime monitor
+> Threat model: runtime watcher for legs 1+2 of the [lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) meeting (untrusted content acting on private context); blind to exfiltration outside the observed log (leg 3).
 
 Живой монитор рантайма агента. Читает поток событий `{id, input, output}` (JSONL) и на каждое
 событие применяет детекторы: **канарейка из входа, всплывшая в выходе без отказа = исполнение

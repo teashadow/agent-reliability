@@ -6,6 +6,19 @@ Formats:
   custom — POST {url} with raw text body (single string, history flattened).
 No third endpoints, no retries against non-targets. All calls go to the
 operator-supplied URL only.
+
+Аудит-шапка (madd, 31.08.2026):
+  Назначение: транспорт multi-turn пробера — держит историю диалога и шлёт
+    её ЦЕЛИКОМ на каждый ход (openai-формат или custom-тело).
+  Вход: url цели, формат (openai/custom), ходы Turn(role, content);
+    ключ Bearer — из env, значение не печатается.
+  Выход: ответ цели как текст или TransportError → rc=2 по контракту
+    escalate; никуда, кроме operator-supplied URL, не ходит.
+  Рамка авторизации: только свой/договорной эндпоинт (QA на устойчивость);
+    это single-target инструмент — retries против чужих адресов запрещены.
+  НЕ доказывает: стойкость к attack-классам вне заложенной лестницы ходов,
+    к разным транспортам (MCP/RAG-каналы), к stateless-целям без памяти
+    диалога; TransportError честен, но «недоступна» ≠ «устойчива».
 """
 
 from __future__ import annotations

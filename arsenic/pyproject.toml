@@ -1,0 +1,16 @@
+[project]
+name = "arsenic"
+version = "2.0.0"
+description = "RAG poisoning resilience QA — decoy documents with hidden canary instructions (MAD battery)"
+requires-python = ">=3.11"
+dependencies = ["click>=8", "rich>=13", "httpx>=0.27"]
+
+[project.scripts]
+arsenic = "arsenic_app.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["arsenic_app*"]

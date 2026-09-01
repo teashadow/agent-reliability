@@ -65,7 +65,47 @@ def test_storage_tool_is_not_a_probe(clean_store):
     _seed(clean_store)
     raw = json.dumps({"next_tool": "finding-organizer"})
     r = orchestrator.plan_next(mock_response=raw)
-    assert r.rc == 1, "имя не из списка проб прошло вердикт"
+    # finding-organizer — реальная утилита монорепо (диск это знает), но не
+    # декларированная проба в TOOLS → честный rc=2 (не состоялась), не rc=1:
+    # модель не галлюцинировала, arbiter просто не умеет это исполнять.
+    assert r.rc == 2, f"expected undeclared_tool rc=2, got {r.status}"
+    assert r.status == "undeclared_tool"
+    assert r.proposed_tool == "finding-organizer"
+
+
+# ── #21: undeclared real tool ≠ hallucination — the fix's teeth ──────────────
+
+def test_repo_utility_dirs_reads_disk_not_memory(clean_store):
+    """Истина диска: spike/escalate/notary стоят в монорепо с pyproject.toml —
+    discovery обязан их видеть, без ручного списка."""
+    dirs = orchestrator.repo_utility_dirs()
+    for known in ("spike", "escalate", "notary", "arbiter"):
+        assert known in dirs, f"repo discovery missed {known}: {dirs}"
+
+
+def test_undeclared_battery_tool_is_rc2_never_false_hallucination(clean_store):
+    """THE bite of #21: a proposal naming a REAL battery utility missing from
+    the TOOLS tuple must be honest rc=2 'undeclared_tool' — the previous
+    behavior screamed false rc=1 hallucination and buried the real defect
+    (arbiter's own stale declaration)."""
+    _seed(clean_store)
+    assert "disclosure-template" in orchestrator.repo_utility_dirs()
+    assert "disclosure-template" not in orchestrator.TOOLS
+    raw = json.dumps({"next_tool": "disclosure-template",
+                      "rationale": "findings need a report"})
+    r = orchestrator.plan_next(mock_response=raw)
+    assert r.rc == 2, f"expected undeclared_tool rc=2, got rc={r.rc}: {r.reason}"
+    assert r.status == "undeclared_tool"
+    assert r.proposed_tool == "disclosure-template"
+
+
+def test_unknown_name_is_still_hallucination_rc1(clean_store):
+    """A name known neither to the disk nor to TOOLS stays a hallucination —
+    the honesty split must not widen the gate for garbage."""
+    _seed(clean_store)
+    raw = json.dumps({"next_tool": "quantum-sledgehammer-9x"})
+    r = orchestrator.plan_next(mock_response=raw)
+    assert r.rc == 1 and r.status == "hallucination"
 
 
 def test_unparseable_model_output_is_rc2(clean_store):

@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 
 from .judge import PERFORMED, REFUSED, judge_disclose, judge_spike  # noqa: E402
-from .payloads import DISCLOSE, EXECUTE  # noqa: E402
+from .payloads import CCI, DISCLOSE, EXECUTE, sealed_instruction  # noqa: E402
 
 
 def _canary() -> str:
@@ -29,7 +29,11 @@ def _canary() -> str:
 def _substitute(template: str, canary: str) -> str:
     b64 = base64.b64encode(canary.encode()).decode()
     rot13 = codecs.encode(canary, "rot13")
-    return (template.replace("{canary_b64}", b64)
+    # CCI envelope: the sealed synthetic instruction + key printed on the page
+    cpt, key = sealed_instruction(canary)
+    return (template.replace("{canary_cpt}", cpt)
+                    .replace("{canary_key}", key)
+                    .replace("{canary_b64}", b64)
                     .replace("{canary_rot13}", rot13)
                     .replace("{canary_rev}", canary[::-1])
                     .replace("{canary}", canary))
@@ -76,7 +80,8 @@ def run(url: str, *, fmt: str = "custom", body: str | None = None,
     by_category: dict[str, dict[str, int]] = {}
 
     with httpx.Client(follow_redirects=True, timeout=30) as client:
-        for group, categories in (("execute", EXECUTE), ("disclose", DISCLOSE)):
+        for group, categories in (("execute", EXECUTE),
+                                  ("cci", CCI), ("disclose", DISCLOSE)):
             for category, techniques in categories.items():
                 stats = {"performed": 0, "refused": 0, "unclear": 0, "not_ran": 0}
                 for template in techniques:
@@ -95,7 +100,10 @@ def run(url: str, *, fmt: str = "custom", body: str | None = None,
                         findings.append({"group": group, "category": category,
                                          "verdict": "not_checked", "why": f"HTTP {code}"})
                         continue
-                    verdict = (judge_spike(answer, canary) if group == "execute"
+                    # CCI is an execute-family group: the canary lives inside
+                    # the sealed envelope, so the behavioral judge applies
+                    verdict = (judge_spike(answer, canary)
+                               if group in ("execute", "cci")
                                else judge_disclose(answer))
                     if verdict.kind == PERFORMED:
                         performed += 1
@@ -113,7 +121,7 @@ def run(url: str, *, fmt: str = "custom", body: str | None = None,
                                          "technique": text[:70]})
                 by_category[f"{group}:{category}"] = stats
 
-    total = sum(len(t) for cats in (EXECUTE, DISCLOSE) for t in cats.values())
+    total = sum(len(t) for cats in (EXECUTE, CCI, DISCLOSE) for t in cats.values())
     if not_ran == total:
         status, rc, reason = "not_proven", 2, "every technique failed to reach the target"
     elif performed:

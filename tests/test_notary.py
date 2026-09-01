@@ -31,6 +31,15 @@ def key_file(tmp_path, monkeypatch):
     return key
 
 
+@pytest.fixture(autouse=True)
+def journal_file(tmp_path, monkeypatch):
+    """Every test gets an isolated replay journal — the real journal at
+    ~/.local/share must never be touched by the suite."""
+    j = tmp_path / "journal" / "journal.jsonl"
+    monkeypatch.setenv("NOTARY_JOURNAL_FILE", str(j))
+    return j
+
+
 def _request(key, *, action="delete_world", target="world:42",
              scope=None, ts=None, sig=None):
     ts = NOW if ts is None else ts
@@ -88,3 +97,60 @@ def test_verdict_carries_not_proven(key_file):
     d = v.to_dict()
     assert d["not_proven"], "честностный контракт (not_proven) выпал из вердикта"
     assert "НЕ доказывает" in d["not_proven"]
+
+
+# ── #20: replay journal — the fix's teeth ─────────────────────────────────────
+
+def test_replay_within_window_is_denied(key_file, journal_file):
+    """THE bite: the same signed request twice inside the window. First =
+    allow, second = DENY rc=1 (a decision, not 'not_proven'). Before #20 this
+    test caught a real hole: the second call silently allowed."""
+    r = _request(key_file)
+    first = gate.evaluate(r, now=NOW)
+    assert first.rc == 0
+    replay = gate.evaluate(r, now=NOW + 5)
+    assert replay.rc == 1, f"replay allowed: {replay.reason}"
+    assert replay.verdict == "DENY"
+    assert "реплей" in replay.reason.lower() or "повтор" in replay.reason.lower()
+    assert journal_file.is_file(), "journal must persist the seen signature"
+
+
+def test_journal_unreadable_is_indeterminate_not_allow(key_file, journal_file):
+    """Fail-safe: a journal that cannot be trusted (binary garbage) means
+    freshness cannot be proven → INDETERMINATE, never ALLOW. Before the fix
+    the gate crashed with UnicodeDecodeError instead of deciding safely."""
+    journal_file.parent.mkdir(parents=True, exist_ok=True)
+    journal_file.write_bytes(b"\x00\xff\xfe garbage not utf8-json\n" * 3)
+    v = gate.evaluate(_request(key_file), now=NOW)
+    assert v.rc == 2, f"garbage journal allowed the mutation: {v.reason}"
+    assert v.checks.get("replay_journal") == "unreadable"
+
+
+def test_journal_unwritable_is_indeterminate(key_file, journal_file, monkeypatch):
+    """Fail-safe: journal write failure = cannot record = cannot allow."""
+    journal_file.parent.mkdir(parents=True, exist_ok=True)
+    blocker = journal_file.parent / "blocker"
+    blocker.write_text("not a directory")
+    monkeypatch.setenv("NOTARY_JOURNAL_FILE", str(blocker / "journal.jsonl"))
+    v = gate.evaluate(_request(key_file), now=NOW)
+    assert v.rc == 2, f"unwritable journal allowed the mutation: {v.reason}"
+    assert "журнал" in v.reason.lower()
+
+
+def test_fresh_request_after_old_one_still_allows(key_file, journal_file):
+    """Journal TTL = window: an old entry must not poison a legitimate new
+    request (different sig anyway; same-sig reuse across windows is also fine
+    because ts-window check gates first — pin the practical case)."""
+    first = gate.evaluate(_request(key_file), now=NOW)
+    assert first.rc == 0
+    second = gate.evaluate(_request(key_file, ts=NOW + 310), now=NOW + 310)
+    assert second.rc == 0, f"legitimate re-request denied: {second.reason}"
+
+
+def test_replay_after_window_expires_denies_via_ts(key_file, journal_file):
+    """Replay of an OLD captured request after the window hits the ts check
+    (deny), not the journal — the two layers are independent."""
+    r = _request(key_file)
+    assert gate.evaluate(r, now=NOW).rc == 0
+    v = gate.evaluate(r, now=NOW + 400)
+    assert v.rc == 1 and "антиреплей" in v.reason
